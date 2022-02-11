@@ -71,7 +71,7 @@ export class TypeormStore<T extends ISession> extends Store {
         let result: any;
         this.debug("GOT %s", session.json);
 
-        result = JSON.parse(session.json);
+        result = session.json;
         fn(undefined, result);
       })
       .catch((er) => {
@@ -84,20 +84,8 @@ export class TypeormStore<T extends ISession> extends Store {
    * Commits the given `sess` object associated with the given `sid`.
    */
   public set = (sid: string, sess: any, fn?: (error?: any) => void) => {
-    const args = [sid];
-    let json: string;
-
-    try {
-      json = JSON.stringify(sess);
-    } catch (er) {
-      return fn ? fn(er) : undefined;
-    }
-
-    args.push(json);
-
     const ttl = this.getTTL(sess, sid);
-    args.push("EX", ttl.toString());
-    this.debug('SET "%s" %s ttl:%s', sid, json, ttl);
+    this.debug('SET "%s" %s ttl:%s', sid, sess, ttl);
 
     (this.cleanupLimit
       ? (() => {
@@ -140,14 +128,14 @@ export class TypeormStore<T extends ISession> extends Store {
             id: sid,
           } as any, {
             expiredAt: Date.now() + ttl * 1000,
-            json,
+            json: sess,
             ...this.additionalFields(sess),
           } as any);
         } catch (_) {
           this.repository.insert({
             expiredAt: Date.now() + ttl * 1000,
             id: sid,
-            json,
+            json: sess,
             ...this.additionalFields(sess),
           } as any);
         }
@@ -227,7 +215,7 @@ export class TypeormStore<T extends ISession> extends Store {
       .getMany()
       .then((sessions) => {
         result = sessions.map((session) => {
-          const sess = JSON.parse(session.json);
+          const sess = session.json;
           sess.id = session.id;
           return sess;
         });

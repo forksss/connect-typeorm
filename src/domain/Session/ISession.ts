@@ -5,5 +5,5 @@ export interface ISession {
 
   destroyedAt?: Date;
 
-  json: string;
+  json: { [key:string]: any };
 }

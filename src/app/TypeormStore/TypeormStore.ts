@@ -25,7 +25,7 @@ export class TypeormStore<T extends ISession> extends Store {
   private debug = Debug("connect:typeorm");
   private limitSubquery = true;
   private onError: ((s: TypeormStore<T>, e: Error) => void) | undefined;
-  private repository!: Repository<ISession>;
+  private repository!: Repository<T>;
   private ttl: Ttl<T> | undefined;
 
   /**
@@ -50,7 +50,7 @@ export class TypeormStore<T extends ISession> extends Store {
     this.ttl = options.ttl;
   }
 
-  public connect(repository: Repository<ISession>) {
+  public connect(repository: Repository<T>) {
     this.repository = repository;
     this.emit("connect");
     return this;
@@ -134,7 +134,7 @@ export class TypeormStore<T extends ISession> extends Store {
       // @ts-ignore
       .then(async () => {
         try {
-          await this.repository.findOneOrFail({ id: sid }, { withDeleted: true });
+          await this.repository.findOneOrFail(sid, { withDeleted: true });
           this.repository.update({
             destroyedAt: null,
             id: sid,
@@ -142,14 +142,14 @@ export class TypeormStore<T extends ISession> extends Store {
             expiredAt: Date.now() + ttl * 1000,
             json,
             ...this.additionalFields(sess),
-          });
+          } as any);
         } catch (_) {
           this.repository.insert({
             expiredAt: Date.now() + ttl * 1000,
             id: sid,
             json,
             ...this.additionalFields(sess),
-          });
+          } as any);
         }
       })
       .then(() => {
@@ -174,7 +174,7 @@ export class TypeormStore<T extends ISession> extends Store {
   public destroy = (sid: string | string[], fn?: (error?: any) => void) => {
     this.debug('DEL "%s"', sid);
 
-    Promise.all((Array.isArray(sid) ? sid : [sid]).map((x) => this.repository.softDelete({ id: x })))
+    Promise.all((Array.isArray(sid) ? sid : [sid]).map((x) => this.repository.softDelete({ id: x } as any)))
       .then(() => {
         if (fn) {
           fn();
@@ -198,7 +198,7 @@ export class TypeormStore<T extends ISession> extends Store {
     this.debug('EXPIRE "%s" ttl:%s', sid, ttl);
     this.repository
       .createQueryBuilder()
-      .update({ expiredAt: Date.now() + ttl * 1000 })
+      .update({ expiredAt: Date.now() + ttl * 1000 } as any)
       .whereInIds([sid])
       .execute()
       .then(() => {

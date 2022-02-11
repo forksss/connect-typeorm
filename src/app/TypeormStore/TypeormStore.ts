@@ -16,17 +16,17 @@ import { ISession } from "../../domain/Session/ISession";
  */
 const oneDay = 86400;
 
-export type Ttl =
+export type Ttl<T extends ISession> =
   | number
-  | ((store: TypeormStore, sess: any, sid?: string) => number);
+  | ((store: TypeormStore<T>, sess: any, sid?: string) => number);
 
-export class TypeormStore extends Store {
+export class TypeormStore<T extends ISession> extends Store {
   private cleanupLimit: number | undefined;
   private debug = Debug("connect:typeorm");
   private limitSubquery = true;
-  private onError: ((s: TypeormStore, e: Error) => void) | undefined;
+  private onError: ((s: TypeormStore<T>, e: Error) => void) | undefined;
   private repository!: Repository<ISession>;
-  private ttl: Ttl | undefined;
+  private ttl: Ttl<T> | undefined;
 
   /**
    * Initializes TypeormStore with the given `options`.
@@ -36,8 +36,8 @@ export class TypeormStore extends Store {
       SessionOptions & {
         cleanupLimit: number;
         limitSubquery: boolean;
-        onError: (s: TypeormStore, e: Error) => void;
-        ttl: Ttl;
+        onError: (s: TypeormStore<T>, e: Error) => void;
+        ttl: Ttl<T>;
       }
     > = {},
   ) {
@@ -141,12 +141,14 @@ export class TypeormStore extends Store {
           } as any, {
             expiredAt: Date.now() + ttl * 1000,
             json,
+            ...this.additionalFields(sess),
           });
         } catch (_) {
           this.repository.insert({
             expiredAt: Date.now() + ttl * 1000,
             id: sid,
             json,
+            ...this.additionalFields(sess),
           });
         }
       })
@@ -236,6 +238,10 @@ export class TypeormStore extends Store {
         fn(er, result);
         this.handleError(er);
       });
+  }
+
+  public additionalFields(_sessionData: any): Partial<T> {
+    return {};
   }
 
   private createQueryBuilder() {

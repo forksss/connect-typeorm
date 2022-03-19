@@ -144,7 +144,7 @@ export class TypeormStore extends Store {
           });
         } catch (_) {
           this.repository.insert({
-            // ...sess,
+            ...sess,
             expiredAt: Date.now() + ttl * 1000,
             id: sid,
             json,

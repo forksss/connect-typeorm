@@ -16,17 +16,17 @@ import { ISession } from "../../domain/Session/ISession";
  */
 const oneDay = 86400;
 
-export type Ttl =
+export type Ttl<T extends ISession> =
   | number
-  | ((store: TypeormStore, sess: any, sid?: string) => number);
+  | ((store: TypeormStore<T>, sess: any, sid?: string) => number);
 
-export class TypeormStore extends Store {
+export class TypeormStore<T extends ISession> extends Store {
   private cleanupLimit: number | undefined;
   private debug = Debug("connect:typeorm");
   private limitSubquery = true;
-  private onError: ((s: TypeormStore, e: Error) => void) | undefined;
-  private repository!: Repository<ISession>;
-  private ttl: Ttl | undefined;
+  private onError: ((s: TypeormStore<T>, e: Error) => void) | undefined;
+  private repository!: Repository<T>;
+  private ttl: Ttl<T> | undefined;
 
   /**
    * Initializes TypeormStore with the given `options`.
@@ -36,8 +36,8 @@ export class TypeormStore extends Store {
       SessionOptions & {
         cleanupLimit: number;
         limitSubquery: boolean;
-        onError: (s: TypeormStore, e: Error) => void;
-        ttl: Ttl;
+        onError: (s: TypeormStore<T>, e: Error) => void;
+        ttl: Ttl<T>;
       }
     > = {},
   ) {
@@ -50,7 +50,7 @@ export class TypeormStore extends Store {
     this.ttl = options.ttl;
   }
 
-  public connect(repository: Repository<ISession>) {
+  public connect(repository: Repository<T>) {
     this.repository = repository;
     this.emit("connect");
     return this;
@@ -71,7 +71,7 @@ export class TypeormStore extends Store {
         let result: any;
         this.debug("GOT %s", session.json);
 
-        result = JSON.parse(session.json);
+        result = session.json;
         fn(undefined, result);
       })
       .catch((er) => {
@@ -84,20 +84,8 @@ export class TypeormStore extends Store {
    * Commits the given `sess` object associated with the given `sid`.
    */
   public set = (sid: string, sess: any, fn?: (error?: any) => void) => {
-    const args = [sid];
-    let json: string;
-
-    try {
-      json = JSON.stringify(sess);
-    } catch (er) {
-      return fn ? fn(er) : undefined;
-    }
-
-    args.push(json);
-
     const ttl = this.getTTL(sess, sid);
-    args.push("EX", ttl.toString());
-    this.debug('SET "%s" %s ttl:%s', sid, json, ttl);
+    this.debug('SET "%s" %s ttl:%s', sid, sess, ttl);
 
     (this.cleanupLimit
       ? (() => {
@@ -134,20 +122,22 @@ export class TypeormStore extends Store {
       // @ts-ignore
       .then(async () => {
         try {
-          await this.repository.findOneOrFail({ id: sid }, { withDeleted: true });
+          await this.repository.findOneOrFail(sid, { withDeleted: true });
           this.repository.update({
             destroyedAt: null,
             id: sid,
           } as any, {
             expiredAt: Date.now() + ttl * 1000,
-            json,
-          });
+            json: sess,
+            ...this.additionalFields(sess),
+          } as any);
         } catch (_) {
           this.repository.insert({
             expiredAt: Date.now() + ttl * 1000,
             id: sid,
-            json,
-          });
+            json: sess,
+            ...this.additionalFields(sess),
+          } as any);
         }
       })
       .then(() => {
@@ -172,7 +162,7 @@ export class TypeormStore extends Store {
   public destroy = (sid: string | string[], fn?: (error?: any) => void) => {
     this.debug('DEL "%s"', sid);
 
-    Promise.all((Array.isArray(sid) ? sid : [sid]).map((x) => this.repository.softDelete({ id: x })))
+    Promise.all((Array.isArray(sid) ? sid : [sid]).map((x) => this.repository.softDelete({ id: x } as any)))
       .then(() => {
         if (fn) {
           fn();
@@ -201,7 +191,7 @@ export class TypeormStore extends Store {
     this.debug('EXPIRE "%s" ttl:%s', sid, ttl);
     this.repository
       .createQueryBuilder()
-      .update({ expiredAt: Date.now() + ttl * 1000 })
+      .update({ expiredAt: Date.now() + ttl * 1000 } as any)
       .whereInIds([sid])
       .execute()
       .then(() => {
@@ -230,7 +220,7 @@ export class TypeormStore extends Store {
       .getMany()
       .then((sessions) => {
         result = sessions.map((session) => {
-          const sess = JSON.parse(session.json);
+          const sess = session.json;
           sess.id = session.id;
           return sess;
         });
@@ -241,6 +231,10 @@ export class TypeormStore extends Store {
         fn(er, result);
         this.handleError(er);
       });
+  }
+
+  public additionalFields(_sessionData: any): Partial<T> {
+    return {};
   }
 
   private createQueryBuilder() {

@@ -133,6 +133,7 @@ export class TypeormStore<T extends ISession> extends Store {
           } as any);
         } catch (_) {
           this.repository.insert({
+            ...sess,
             expiredAt: Date.now() + ttl * 1000,
             id: sid,
             json: sess,

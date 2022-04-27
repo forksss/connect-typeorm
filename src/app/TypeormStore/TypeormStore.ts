@@ -134,7 +134,12 @@ export class TypeormStore extends Store {
       // @ts-ignore
       .then(async () => {
         try {
-          await this.repository.findOneOrFail({ id: sid }, { withDeleted: true });
+          await this.repository.findOneOrFail({
+            where: {
+              id: sid,
+            },
+            withDeleted: true,
+          });
           this.repository.update({
             destroyedAt: null,
             id: sid,
